@@ -353,6 +353,14 @@ td:last-child,th:last-child{text-align:right}
 
       <div class="card">
         <div class="ch">
+          <div class="ct">📍 Regions</div>
+          <button class="btn btn-o btn-sm" onclick="openAddModal('region')">＋ Add</button>
+        </div>
+        <div id="reg-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="ch">
           <div class="ct">🚐 Vehicles</div>
           <button class="btn btn-o btn-sm" onclick="openAddModal('vehicle')">＋ Add</button>
         </div>
@@ -400,7 +408,7 @@ td:last-child,th:last-child{text-align:right}
 
 <script>
 // ── STATE ────────────────────────────────────────────────────
-let CFG       = { vehicles: [], storages: [] };
+let CFG       = { vehicles: [], storages: [], regions: [] };
 let DAY_DATA  = [];
 let CUR_DATE  = '';
 let authed    = ${isAuthed};
@@ -458,7 +466,7 @@ function nav(screen) {
   q('#nav-' + screen).classList.add('on');
   if (screen === 'storage')  loadStorage();
   if (screen === 'dash')     loadDash();
-  if (screen === 'settings') renderSettings();
+  if (screen === 'settings') loadConfig().then(() => renderSettings());
 }
 
 // ── API WRAPPERS ─────────────────────────────────────────────
@@ -477,7 +485,10 @@ async function apiPost(body) {
 
 // ── CONFIG ───────────────────────────────────────────────────
 async function loadConfig() {
-  try { CFG = await apiGet({ action:'getConfig' }); } catch {}
+  try {
+    const data = await apiGet({ action:'getConfig' });
+    if (data && data.vehicles) CFG = data;
+  } catch {}
 }
 
 // ── DAILY ENTRY ──────────────────────────────────────────────
@@ -531,7 +542,7 @@ function renderEntries() {
       <div class="ve-del">
         <button class="btn btn-d btn-xs" onclick="delEntry('\${esc(e.timestamp)}')">✕</button>
       </div>
-      <div class="ve-name">🚐 \${esc(e.vehicle)}</div>
+      <div class="ve-name">🚐 \${esc(e.vehicle)}\${e.region ? ' &nbsp;·&nbsp; ' + esc(e.region) : ''}</div>
       <div class="ve-grid">
         <div class="ve-stat">Pickups: <b>\${e.pickups}</b></div>
         <div class="ve-stat">Wearable: <b>\${fmt(e.wearableKG)} kg</b></div>
@@ -546,12 +557,22 @@ function openEntryModal() {
   if (!CFG.vehicles.length) { toast('Add vehicles in Settings first'); return; }
   if (!CFG.storages.length) { toast('Add storage locations in Settings first'); return; }
 
+  const regionOpts = CFG.regions && CFG.regions.length
+    ? opts(CFG.regions)
+    : '<option value="">— select region —</option>';
+
   q('#modal-body').innerHTML = \`
     <div class="mh"><div class="mt">Add Vehicle Entry</div><button class="mclose" onclick="closeModal()">×</button></div>
     <div id="merr" class="err hidden"></div>
-    <div class="fg">
-      <label>Vehicle</label>
-      <select id="m-veh">\${opts(CFG.vehicles)}</select>
+    <div class="two">
+      <div class="fg">
+        <label>Vehicle</label>
+        <select id="m-veh">\${opts(CFG.vehicles)}</select>
+      </div>
+      <div class="fg">
+        <label>Region</label>
+        <select id="m-reg">\${regionOpts}</select>
+      </div>
     </div>
     <div class="fg">
       <label>Number of Pickups (customers)</label>
@@ -578,6 +599,7 @@ function openEntryModal() {
 
 async function saveEntry() {
   const v    = q('#m-veh').value;
+  const reg  = q('#m-reg') ? q('#m-reg').value : '';
   const pkp  = parseInt(q('#m-pkp').value) || 0;
   const wear = parseFloat(q('#m-wear').value) || 0;
   const wast = parseFloat(q('#m-wast').value) || 0;
@@ -589,7 +611,7 @@ async function saveEntry() {
   }
   setBusy('#m-save', 'Saving…');
   try {
-    await apiPost({ action:'addCollection', date:CUR_DATE, vehicle:v, pickups:pkp, wearableKG:wear, wastageKG:wast, storageLocation:sto });
+    await apiPost({ action:'addCollection', date:CUR_DATE, vehicle:v, region:reg, pickups:pkp, wearableKG:wear, wastageKG:wast, storageLocation:sto });
     closeModal(); await loadDay(); toast('Entry saved ✓');
   } catch {
     err.textContent = 'Failed to save. Try again.'; err.classList.remove('hidden');
@@ -758,6 +780,27 @@ function renderDash(data, month) {
     </div>
   \`;
 
+  if (data.regionBreakdown && data.regionBreakdown.length) {
+    html += \`
+      <div class="card">
+        <div class="ct" style="margin-bottom:10px">By Region</div>
+        <table>
+          <thead><tr><th>Region</th><th>Pickups</th><th>Wearable</th><th>Wastage</th></tr></thead>
+          <tbody>
+            \${data.regionBreakdown.map(r => \`
+              <tr>
+                <td>\${esc(r.region)}</td>
+                <td>\${r.pickups}</td>
+                <td>\${fmt(r.wearable)} kg</td>
+                <td>\${fmt(r.wastage)} kg</td>
+              </tr>
+            \`).join('')}
+          </tbody>
+        </table>
+      </div>
+    \`;
+  }
+
   if (data.vehicleBreakdown.length) {
     html += \`
       <div class="card">
@@ -813,41 +856,49 @@ function renderSettings() {
   q('#sto-list').innerHTML = CFG.storages.length
     ? CFG.storages.map(s => \`<div class="list-item">🏭 \${esc(s)}</div>\`).join('')
     : '<div style="padding:10px 0;font-size:13px;color:var(--gr5)">No storage locations yet</div>';
+
+  const regEl = q('#reg-list');
+  if (regEl) {
+    regEl.innerHTML = CFG.regions && CFG.regions.length
+      ? CFG.regions.map(r => \`<div class="list-item">📍 \${esc(r)}</div>\`).join('')
+      : '<div style="padding:10px 0;font-size:13px;color:var(--gr5)">No regions added yet</div>';
+  }
+}
+
+async function saveConfig(type) {
+  const name = q('#add-name').value.trim();
+  if (!name) { toast('Please enter a name'); return; }
+  setBusy('#add-save', 'Adding…');
+  try {
+    const actionMap = { vehicle:'addVehicle', storage:'addStorage', region:'addRegion' };
+    await apiPost({ action: actionMap[type], name });
+    await loadConfig();
+    closeModal();
+    renderSettings();
+    const labels = { vehicle:'Vehicle added ✓', storage:'Storage location added ✓', region:'Region added ✓' };
+    setTimeout(() => toast(labels[type] || 'Added ✓'), 100);
+  } catch {
+    resetBusy('#add-save', 'Add');
+    toast('Failed to save — please try again');
+  }
 }
 
 function openAddModal(type) {
-  const label = type === 'vehicle' ? 'Vehicle Name' : 'Location Name';
-  const ph    = type === 'vehicle' ? 'e.g. Vehicle 1 / KA01AB1234' : 'e.g. Warehouse A / Shop 1';
-  const title = type === 'vehicle' ? 'Add Vehicle' : 'Add Storage Location';
+  const labels = { vehicle:'Vehicle Name', storage:'Location Name', region:'Region Name' };
+  const phs    = { vehicle:'e.g. Vehicle 1 / KA01AB1234', storage:'e.g. Warehouse A / Shop 1', region:'e.g. North / South / HSR Layout' };
+  const titles = { vehicle:'Add Vehicle', storage:'Add Storage Location', region:'Add Region' };
 
   q('#modal-body').innerHTML = \`
-    <div class="mh"><div class="mt">\${title}</div><button class="mclose" onclick="closeModal()">×</button></div>
+    <div class="mh"><div class="mt">\${titles[type]}</div><button class="mclose" onclick="closeModal()">×</button></div>
     <div class="fg">
-      <label>\${label}</label>
-      <input type="text" id="add-name" placeholder="\${ph}">
+      <label>\${labels[type]}</label>
+      <input type="text" id="add-name" placeholder="\${phs[type]}">
     </div>
     <button class="btn btn-p" id="add-save" onclick="saveConfig('\${type}')">Add</button>
   \`;
   openModal();
   setTimeout(() => q('#add-name').focus(), 100);
 }
-
-async function saveConfig(type) {
-  const name = q('#add-name').value.trim();
-  if (!name) return;
-  setBusy('#add-save','Adding…');
-  try {
-    const action = type === 'vehicle' ? 'addVehicle' : 'addStorage';
-    await apiPost({ action, name });
-    if (type === 'vehicle') CFG.vehicles.push(name);
-    else                    CFG.storages.push(name);
-    closeModal(); renderSettings(); toast(type === 'vehicle' ? 'Vehicle added ✓' : 'Storage added ✓');
-  } catch {
-    resetBusy('#add-save','Add');
-  }
-}
-
-// ── MODAL HELPERS ─────────────────────────────────────────────
 function openModal()  { q('#backdrop').classList.remove('hidden'); }
 function closeModal() { q('#backdrop').classList.add('hidden'); }
 function tryClose(e)  { if (e.target === q('#backdrop')) closeModal(); }

@@ -34,6 +34,7 @@ function doPost(e) {
     else if (action === 'addStorageMovement') result = addStorageMovement(data);
     else if (action === 'addVehicle')         result = addConfigItem('Vehicles', data.name);
     else if (action === 'addStorage')         result = addConfigItem('Storages', data.name);
+    else if (action === 'addRegion')          result = addConfigItem('Regions', data.name);
     else                                       result = { error: 'Unknown action: ' + action };
 
     return jsonResponse(result);
@@ -85,6 +86,7 @@ function setup() {
   );
   ensureSheet('Vehicles', ['Name', 'Active']);
   ensureSheet('Storages', ['Name', 'Active']);
+  ensureSheet('Regions',  ['Name', 'Active']);
 
   // Seed default vehicles
   const vs = ss.getSheetByName('Vehicles');
@@ -93,6 +95,17 @@ function setup() {
       ['Vehicle 1', true],
       ['Vehicle 2', true],
       ['Vehicle 3', true],
+    ]);
+  }
+
+  // Seed default regions
+  const rs = ss.getSheetByName('Regions');
+  if (rs.getLastRow() <= 1) {
+    rs.getRange(2, 1, 4, 2).setValues([
+      ['North', true],
+      ['South', true],
+      ['East',  true],
+      ['West',  true],
     ]);
   }
 }
@@ -117,7 +130,8 @@ function addCollection(data) {
     Number(data.pickups) || 0,
     Number(data.wearableKG) || 0,
     Number(data.wastageKG) || 0,
-    data.storageLocation || ''
+    data.storageLocation || '',
+    data.region || ''
   ]);
   return { success: true, timestamp };
 }
@@ -155,7 +169,8 @@ function getCollections(date, month) {
       pickups:         Number(r[3]) || 0,
       wearableKG:      r2(r[4]),
       wastageKG:       r2(r[5]),
-      storageLocation: String(r[6] || '')
+      storageLocation: String(r[6] || ''),
+      region:          String(r[7] || '')
     }));
 
   return { collections };
@@ -248,6 +263,7 @@ function getDashboard(month) {
   // Per vehicle
   const vehicleMap = {};
   const dailyMap   = {};
+  const regionMap  = {};
 
   rows.forEach(r => {
     const d    = dateStr(r[1]);
@@ -255,6 +271,7 @@ function getDashboard(month) {
     const pkp  = Number(r[3]) || 0;
     const wear = Number(r[4]) || 0;
     const wast = Number(r[5]) || 0;
+    const reg  = String(r[7] || 'Unassigned');
 
     if (!vehicleMap[v]) vehicleMap[v] = { vehicle: v, trips: 0, pickups: 0, wearable: 0, wastage: 0 };
     vehicleMap[v].trips++;
@@ -266,6 +283,11 @@ function getDashboard(month) {
     dailyMap[d].pickups  += pkp;
     dailyMap[d].wearable += wear;
     dailyMap[d].wastage  += wast;
+
+    if (!regionMap[reg]) regionMap[reg] = { region: reg, pickups: 0, wearable: 0, wastage: 0 };
+    regionMap[reg].pickups  += pkp;
+    regionMap[reg].wearable += wear;
+    regionMap[reg].wastage  += wast;
   });
 
   const stats = {
@@ -286,10 +308,16 @@ function getDashboard(month) {
     wastage:  r2(v.wastage)
   }));
 
+  const regionBreakdown = Object.values(regionMap).map(r => ({
+    ...r,
+    wearable: r2(r.wearable),
+    wastage:  r2(r.wastage)
+  }));
+
   const dailyData = Object.values(dailyMap)
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  return { stats, vehicleBreakdown, dailyData };
+  return { stats, vehicleBreakdown, regionBreakdown, dailyData };
 }
 
 // ── CONFIG ────────────────────────────────────────────────────
@@ -303,7 +331,8 @@ function getConfig() {
   }
   return {
     vehicles: listActive('Vehicles'),
-    storages: listActive('Storages')
+    storages: listActive('Storages'),
+    regions:  listActive('Regions')
   };
 }
 
