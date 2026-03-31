@@ -5,7 +5,7 @@ compatibility_date = "2024-09-23"
 # ─── Plain env vars (non-secret) ───────────────────────────────
 [vars]
 # Paste your Apps Script exec URL here after deploying the script
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYMENT_ID/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxo68l4BiyU6Y_IOJJ7zs-w74r33AupIX1YOkHr6z_m8dVBpGaFoNHr7i5sLjGZzi8Gsw/exec"
 
 # ─── Secret (set via CLI, never commit to git) ─────────────────
 # Run:  wrangler secret put PASSWORD
